@@ -13,4 +13,4 @@ for (let y = 0; y < H * S; y++) for (let x = 0; x < W * S; x++) {
   const s = w.sea[i]; if (s >= 0 && ((cx + 1 < W && w.sea[i + 1] !== s && w.sea[i + 1] >= 0) || (cy + 1 < H && w.sea[i + W] !== s && w.sea[i + W] >= 0))) { r *= 0.8; g *= 0.8; b *= 0.8; }
   const o = (y * W * S + x) * 3; buf[o] = r; buf[o + 1] = g; buf[o + 2] = b;
 }
-writeFileSync('/tmp/claude-0/-home-user/2b4a8ca5-0b8d-5e86-b10a-6b3e4690915e/scratchpad/map.ppm', Buffer.concat([Buffer.from(`P6 ${W * S} ${H * S} 255\n`), buf]));
+writeFileSync((process.env.TMPDIR || '/tmp') + '/aethoria-map.ppm', Buffer.concat([Buffer.from(`P6 ${W * S} ${H * S} 255\n`), buf]));
