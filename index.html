@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coronas de Aethoria</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/ui/style.css">
+</head>
+<body>
+<div id="start" hidden></div>
+<div id="app" hidden>
+  <header id="top"></header>
+  <nav id="nav">
+    <button data-act="modal" data-m="atlas" class="on"><i>✦</i>Atlas</button>
+    <button data-act="modal" data-m="reino"><i>♔</i>Reino</button>
+    <button data-act="modal" data-m="economia"><i>◉</i>Economía</button>
+    <button data-act="modal" data-m="tecnologia"><i>✎</i>Tecnología</button>
+    <button data-act="modal" data-m="ejercito"><i>⚔</i>Ejército</button>
+    <button data-act="modal" data-m="exploracion"><i>⚓</i>Exploración</button>
+    <button data-act="modal" data-m="diplomacia"><i>✉</i>Diplomacia</button>
+    <button data-act="modal" data-m="cronicas"><i>❧</i>Crónicas</button>
+    <button data-act="modal" data-m="partida"><i>⚙</i>Partida</button>
+  </nav>
+  <main id="mapwrap">
+    <canvas id="map"></canvas>
+    <div id="layers"></div>
+    <div id="legend"></div>
+    <div id="alerts"></div>
+    <div id="modal" hidden></div>
+  </main>
+  <aside id="panel"></aside>
+</div>
+<div id="battle" hidden></div>
+<div id="tip"></div>
+<div id="toast"></div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
