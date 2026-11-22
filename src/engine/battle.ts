@@ -2,6 +2,7 @@
 import { RNG, hashNums } from './rng';
 import type { GameState, Army, Character, Biome } from './types';
 import { UNIT, UnitDef } from './data';
+import { ust, fatigueRate } from './milcat';
 import type { World } from './world';
 
 export const BW = 30, BH = 20, TICKS = 10;
@@ -28,9 +29,14 @@ export interface BGroup {
   id: number; side: 0 | 1; type: string; sector: Sector; men: number; startMen: number; x: number; y: number; w: number;
   order: Order; intensity: Intensity; target: number | null; morale: number; cohesion: number; fatigue: number; exp: number; status: Status;
   killed: number; wounded: number; captured: number; deserted: number; dispersed: number; charged: boolean; contactTicks: number; lastHit: string; ordersGiven: number;
+  tier?: number; train?: number; ammo?: number; maxAmmo?: number; rl?: number; volleys?: number;
 }
+/** Estadísticas efectivas del grupo (tipo + nivel de equipo). */
+export const ST = (g: BGroup) => ust(g.type, g.tier ?? 2);
+/** Penetración frente a armadura: si la supera, más daño; si no la alcanza, mucho menos. */
+export function penF(pen: number, prot: number) { return pen >= prot ? 1 + (pen - prot) * 0.04 : 1 / (1 + (prot - pen) * 0.25); }
 export interface Frame { g: { id: number; x: number; y: number; men: number; st: Status; w: number }[]; fx: { k: 'tiro' | 'melee'; a: number; b: number }[]; }
-export interface BSide { kid: number; armies: number[]; general: Character | null; units: { type: string; men: number; exp: number }[]; name: string; color: string; }
+export interface BSide { kid: number; armies: number[]; general: Character | null; units: { type: string; men: number; exp: number; tier?: number; train?: number; amm?: number }[]; name: string; color: string; }
 export interface BattleState {
   id: number; prov: number; turn: number; sides: [BSide, BSide]; attackerSide: 0 | 1; playerSide: 0 | 1 | -1;
   tiles: number[]; fieldName: string; features: string[]; minWidth: number;
@@ -71,9 +77,10 @@ export function generateField(w: World, pid: number, seed: number) {
   return { tiles: t, features: feats, minWidth: minW, name };
 }
 
-export function unitCat(u: UnitDef): 'inf' | 'ranged' | 'cav' | 'heavy' { if (u.cav) return 'cav'; if (u.range > 0 && u.id !== 'exploradores') return 'ranged'; if (u.id === 'minotauros' || u.id === 'gigantes' || u.id === 'enanos') return 'heavy'; return 'inf'; }
+export type Cat = 'inf' | 'ranged' | 'cav' | 'heavy' | 'siege';
+export function unitCat(u: UnitDef): Cat { if (u.role === 'asedio' || u.role === 'ingenieros') return 'siege'; if (u.cav && u.role !== 'tiradores') return 'cav'; if (u.role === 'tiradores') return 'ranged'; if (u.role === 'choque' || u.discipline >= 70) return 'heavy'; return 'inf'; }
 export const FORMATIONS: Record<string, { name: string; desc: string; p: Record<'inf' | 'ranged' | 'cav' | 'heavy', Partial<Record<Sector, number>>>; needs?: string }> = {
-  equilibrada: { name: 'Equilibrada', desc: 'Línea sólida con arqueros delante y caballería en las alas.', p: { inf: { izquierda: 25, centro: 40, derecha: 25, reserva: 10 }, ranged: { vanguardia: 60, retaguardia: 40 }, cav: { izquierda: 50, derecha: 50 }, heavy: { centro: 100 } } },
+  equilibrada: { name: 'Equilibrada', desc: 'Línea sólida con tiradores tras ella y caballería en las alas.', p: { inf: { izquierda: 25, centro: 40, derecha: 25, reserva: 10 }, ranged: { retaguardia: 100 }, cav: { izquierda: 50, derecha: 50 }, heavy: { centro: 100 } } },
   defensiva: { name: 'Defensiva', desc: 'Centro reforzado, tiradores protegidos y caballería en reserva.', p: { inf: { izquierda: 25, centro: 45, derecha: 25, reserva: 5 }, ranged: { retaguardia: 100 }, cav: { reserva: 100 }, heavy: { centro: 60, reserva: 40 } } },
   ofensiva: { name: 'Ofensiva', desc: 'Vanguardia potente para romper el centro enemigo.', p: { inf: { vanguardia: 30, izquierda: 20, centro: 30, derecha: 20 }, ranged: { vanguardia: 100 }, cav: { izquierda: 50, derecha: 50 }, heavy: { vanguardia: 100 } } },
   envolvente: { name: 'Envolvente', desc: 'Alas fuertes para rodear al enemigo.', p: { inf: { izquierda: 35, centro: 30, derecha: 35 }, ranged: { retaguardia: 100 }, cav: { izquierda: 50, derecha: 50 }, heavy: { izquierda: 50, derecha: 50 } } },
@@ -85,7 +92,7 @@ export const FORMATIONS: Record<string, { name: string; desc: string; p: Record<
 export type Deployment = Record<string, Partial<Record<Sector, number>>>;
 export function formationDeployment(side: BSide, f: string): Deployment {
   const F = FORMATIONS[f] || FORMATIONS.equilibrada; const d: Deployment = {};
-  for (const u of side.units) { if (u.men <= 0) continue; const p = F.p[unitCat(UNIT[u.type])]; const e: Partial<Record<Sector, number>> = {}; let left = u.men; const secs = Object.keys(p) as Sector[];
+  for (const u of side.units) { if (u.men <= 0) continue; const p = (F.p as Partial<Record<Cat, Partial<Record<Sector, number>>>>)[unitCat(UNIT[u.type])] || { retaguardia: 100 }; const e: Partial<Record<Sector, number>> = {}; let left = u.men; const secs = Object.keys(p) as Sector[];
     secs.forEach((s, i) => { const v = i === secs.length - 1 ? left : Math.round(u.men * p[s]! / 100); e[s] = v; left -= v; }); d[u.type] = e; }
   return d;
 }
@@ -106,10 +113,11 @@ export function applyDeployment(b: BattleState, side: 0 | 1, dep: Deployment) {
   for (const u of S.units) {
     const e = dep[u.type] || { centro: u.men }; let total = 0; for (const s in e) total += Math.max(0, e[s as Sector] || 0);
     const scale = total > u.men ? u.men / total : 1; let assigned = 0;
+    const mk = (s: Sector, men: number): BGroup => { const d = ust(u.type, u.tier ?? 2); const tr = (u.train || 0) > 0; const ammo = Math.round(d.ammo * (u.amm ?? 1));
+      return { id: b.nextG++, side, type: u.type, sector: s, men, startMen: men, x: 0, y: 0, w: 1, order: 'mantener', intensity: 'equilibrada', target: null, morale: d.morale + 10 + u.exp * 15 - (tr ? 15 : 0), cohesion: d.cohesion * (tr ? 0.8 : 1), fatigue: 0, exp: u.exp, status: 'formado', killed: 0, wounded: 0, captured: 0, deserted: 0, dispersed: 0, charged: false, contactTicks: 0, lastHit: '', ordersGiven: 0, tier: u.tier ?? 2, train: u.train || 0, ammo, maxAmmo: d.ammo, rl: 0, volleys: 0 }; };
     for (const s of SECTORS) { let men = Math.floor((e[s] || 0) * scale); if (men <= 0) continue; assigned += men;
-      const g: BGroup = { id: b.nextG++, side, type: u.type, sector: s, men, startMen: men, x: 0, y: 0, w: 1, order: 'mantener', intensity: 'equilibrada', target: null, morale: UNIT[u.type].morale + 10 + u.exp * 15, cohesion: 90, fatigue: 0, exp: u.exp, status: 'formado', killed: 0, wounded: 0, captured: 0, deserted: 0, dispersed: 0, charged: false, contactTicks: 0, lastHit: '', ordersGiven: 0 };
-      (bySec[s] = bySec[s] || []).push(g); b.groups.push(g); }
-    const rest = u.men - assigned; if (rest > 0) { const g = b.groups.find(x => x.side === side && x.type === u.type && x.sector === 'reserva'); if (g) { g.men += rest; g.startMen += rest; } else { const ng: BGroup = { id: b.nextG++, side, type: u.type, sector: 'reserva', men: rest, startMen: rest, x: 0, y: 0, w: 1, order: 'mantener', intensity: 'equilibrada', target: null, morale: UNIT[u.type].morale + 10 + u.exp * 15, cohesion: 90, fatigue: 0, exp: u.exp, status: 'formado', killed: 0, wounded: 0, captured: 0, deserted: 0, dispersed: 0, charged: false, contactTicks: 0, lastHit: '', ordersGiven: 0 }; (bySec.reserva = bySec.reserva || []).push(ng); b.groups.push(ng); } }
+      const g = mk(s, men); (bySec[s] = bySec[s] || []).push(g); b.groups.push(g); }
+    const rest = u.men - assigned; if (rest > 0) { const g = b.groups.find(x => x.side === side && x.type === u.type && x.sector === 'reserva'); if (g) { g.men += rest; g.startMen += rest; } else { const ng = mk('reserva', rest); (bySec.reserva = bySec.reserva || []).push(ng); b.groups.push(ng); } }
   }
   for (const s in bySec) {
     const gs = bySec[s]; let [sx, sy] = sectorPos(s as Sector, side);
@@ -117,7 +125,7 @@ export function applyDeployment(b: BattleState, side: 0 | 1, dep: Deployment) {
     const tot = gs.reduce((a, g) => a + g.w + 0.25, 0); let x = sx - tot / 2;
     for (const g of gs) { g.x = Math.max(g.w / 2, Math.min(BW - g.w / 2, x + g.w / 2)); g.y = sy; x += g.w + 0.25; nudgePassable(b, g); }
   }
-  for (const g of b.groups) if (g.side === side) { const d = UNIT[g.type]; g.order = g.sector === 'reserva' ? 'mantener' : d.range > 0 && !d.cav ? 'disparar' : 'mantener'; }
+  for (const g of b.groups) if (g.side === side) { const d = UNIT[g.type]; g.order = g.sector === 'reserva' ? 'mantener' : d.range > 0 && (!d.cav || d.role === 'tiradores') ? 'disparar' : 'mantener'; }
 }
 function nudgePassable(b: BattleState, g: BGroup) { if (passable(b, g.x, g.y)) return; for (let d = 1; d < BW; d++) { for (const s of [-1, 1]) { const x = g.x + s * d; if (passable(b, x, g.y)) { g.x = x; g.w = groupWidth(b, g.men, g.type, g.x, g.y); return; } } } }
 export function deployZone(side: 0 | 1) { return side === 0 ? [BH - 7, BH - 0.5] : [0.5, 7]; }
@@ -125,13 +133,13 @@ export function moveDeployed(b: BattleState, g: BGroup, x: number, y: number) { 
 
 export function sideGeneral(g: GameState, armies: Army[]): Character | null { let best: Character | null = null; for (const a of armies) if (a.general && (!best || a.general.estrategia > best.estrategia)) best = a.general; return best; }
 export function createBattle(w: World, g: GameState, pid: number, attackers: Army[], defenders: Army[]): BattleState {
-  const mk = (arr: Army[]): BSide => { const units: BSide['units'] = []; for (const a of arr) for (const u of a.units) { if (u.men <= 0) continue; const e = units.find(x => x.type === u.type); if (e) { e.exp = (e.exp * e.men + u.exp * u.men) / (e.men + u.men); e.men += u.men; } else units.push({ type: u.type, men: u.men, exp: u.exp }); } const k = g.kingdoms[arr[0].owner]; return { kid: k.id, armies: arr.map(a => a.id), general: sideGeneral(g, arr), units, name: k.name, color: k.color }; };
+  const mk = (arr: Army[]): BSide => { const units: BSide['units'] = []; for (const a of arr) for (const u of a.units) { if (u.men <= 0) continue; const e = units.find(x => x.type === u.type); if (e) { const t = e.men + u.men; e.exp = (e.exp * e.men + u.exp * u.men) / t; e.tier = ((e.tier ?? 2) * e.men + (u.tier ?? 2) * u.men) / t; e.train = Math.round(((e.train || 0) * e.men + (u.train || 0) * u.men) / t); e.amm = ((e.amm ?? 1) * e.men + (u.amm ?? 1) * u.men) / t; e.men = t; } else units.push({ type: u.type, men: u.men, exp: u.exp, tier: u.tier ?? 2, train: u.train || 0, amm: u.amm ?? 1 }); } const k = g.kingdoms[arr[0].owner]; return { kid: k.id, armies: arr.map(a => a.id), general: sideGeneral(g, arr), units, name: k.name, color: k.color }; };
   const A = mk(attackers), D = mk(defenders);
   const pSide = A.kid === g.playerId ? 'A' : D.kid === g.playerId ? 'D' : '-';
   const sides: [BSide, BSide] = pSide === 'A' ? [A, D] : [D, A];
   const attackerSide: 0 | 1 = pSide === 'A' ? 0 : 1;
   const f = generateField(w, pid, g.seed + g.turn);
-  const scout = (S: BSide) => { const t = S.units.reduce((s, u) => s + u.men, 0) || 1; const sc = S.units.filter(u => u.type === 'exploradores' || u.type === 'centauros').reduce((s, u) => s + u.men, 0); return Math.min(1, 0.35 + sc / t * 3 + ((S.general?.inteligencia || 5) - 5) * 0.04); };
+  const scout = (S: BSide) => { const t = S.units.reduce((s, u) => s + u.men, 0) || 1; const sc = S.units.reduce((s, u) => s + u.men * Math.max(0, UNIT[u.type].recon - 10) / 60, 0); return Math.min(1, 0.35 + sc / t * 3 + ((S.general?.inteligencia || 5) - 5) * 0.04); };
   const b: BattleState = { id: g.nextId++, prov: pid, turn: g.turn, sides, attackerSide, playerSide: pSide === '-' ? -1 : 0, tiles: f.tiles, fieldName: f.name, features: f.features, minWidth: f.minWidth, stage: 'reconocimiento', phase: 0, maxPhases: 12, groups: [], log: [], frames: [], decisive: [], winner: -1, rngS: hashNums(g.seed, g.turn, pid, 5), info: [scout(sides[0]), scout(sides[1])], nextG: 1 };
   // el defensor ocupa colinas si puede (la IA despliega sola)
   return b;
@@ -153,7 +161,7 @@ export function assessment(b: BattleState, side: 0 | 1) {
   return { adv, vul, def, flank, risk, quality, q };
 }
 export function enemyEstimate(b: BattleState, side: 0 | 1, men: number) { const q = b.info[side]; if (q > 0.75) return { txt: men.toLocaleString('es'), exact: true }; const r = q > 0.5 ? 100 : 500; if (men <= 0) return { txt: '0', exact: false }; const v = Math.round(men / r) * r; return { txt: v === 0 ? '<' + r : '≈' + v.toLocaleString('es'), exact: false }; }
-export function hiddenFrom(b: BattleState, side: 0 | 1, g: BGroup) { if (g.side === side || b.info[side] > 0.6) return false; if (b.stage === 'fin') return false; const t = tileAt(b, g.x, g.y); if (t !== 1) return false; return !b.groups.some(o => o.side === side && Math.hypot(o.x - g.x, o.y - g.y) < 4.5 && alive(o)); }
+export function hiddenFrom(b: BattleState, side: 0 | 1, g: BGroup) { if (g.side === side || b.info[side] > 0.6) return false; if (b.stage === 'fin') return false; const t = tileAt(b, g.x, g.y); if (t !== 1) return false; const R = Math.max(1.5, 4.5 * (1.2 - ST(g).conceal / 100)); return !b.groups.some(o => o.side === side && Math.hypot(o.x - g.x, o.y - g.y) < R + ST(o).recon / 40 && alive(o)); }
 
 export const alive = (g: BGroup) => g.status !== 'huida' && g.status !== 'retirado' && g.status !== 'destruido';
 const onField = (g: BGroup) => g.status !== 'retirado' && g.status !== 'destruido';
@@ -201,13 +209,13 @@ function destination(b: BattleState, g: BGroup): [number, number] | null {
   }
   return null;
 }
-function rangeOf(b: BattleState, g: BGroup) { const d = UNIT[g.type]; let r = d.range; if (tileAt(b, g.x, g.y) === 2) r += 1; return r; }
+export function rangeOf(b: BattleState, g: BGroup) { const d = ST(g); let r = d.range; if (tileAt(b, g.x, g.y) === 2) r += 1; return r; }
 function los(b: BattleState, a: BGroup, t: BGroup) { const n = Math.ceil(Math.hypot(t.x - a.x, t.y - a.y) * 2); let block = 0; for (let i = 1; i < n; i++) { const x = a.x + (t.x - a.x) * i / n, y = a.y + (t.y - a.y) * i / n; if (TILE[tileAt(b, x, y)].los) block++; } return block <= 2 ? 1 : block <= 5 ? 0.55 : 0.25; }
 
 function sideMods(b: BattleState, side: 0 | 1) { const gen = b.sides[side].general; return { atk: 1 + ((gen?.estrategia || 5) - 5) * 0.03, mor: 1 - ((gen?.liderazgo || 5) - 5) * 0.035 }; }
 export function desperateAllowed(b: BattleState, side: 0 | 1) { const mine = b.groups.filter(g => g.side === side && alive(g)); const theirs = b.groups.filter(g => g.side !== side && alive(g)); const mm = mine.reduce((s, g) => s + g.men, 0), tm = theirs.reduce((s, g) => s + g.men, 0); const mor = mine.length ? mine.reduce((s, g) => s + g.morale, 0) / mine.length : 0; return mor < 40 || mm < tm * 0.55; }
 
-export function runPhase(b: BattleState, techAtk: [number, number] = [1, 1]) {
+export function runPhase(b: BattleState) {
   if (b.stage === 'fin') return; b.stage = 'combate';
   const r = new RNG(b.rngS); b.frames = []; b.phase++;
   const ph = b.phase; const logp = (t: string, side = -1) => b.log.push({ phase: ph, text: t, side });
@@ -231,7 +239,7 @@ export function runPhase(b: BattleState, techAtk: [number, number] = [1, 1]) {
         if (g.status !== 'huida' && g.order !== 'retirarse' && b.groups.some(o => o.side !== g.side && onField(o) && o.status !== 'huida' && inContact(g, o))) break;
       }
       g.w = groupWidth(b, g.men, g.type, g.x, g.y);
-      g.fatigue = Math.min(100, g.fatigue + 0.7 * INT[g.intensity].fat * (g.order === 'cargar' ? 1.6 : 1));
+      g.fatigue = Math.min(100, g.fatigue + 0.7 * INT[g.intensity].fat * (g.order === 'cargar' ? 1.6 : 1) * fatF(g));
       if (TILE[tileAt(b, g.x, g.y)].mv < 0.8) g.cohesion = Math.max(0, g.cohesion - 0.6);
       if (g.status === 'huida' && (g.side === 0 ? g.y > BH - 0.7 : g.y < 0.7)) { g.status = 'retirado'; logp(`${UNIT[g.type].name} (${SECTOR_NAMES[g.sector]}) abandona el campo de batalla.`, g.side); }
       if (g.order === 'retirarse' && (g.side === 0 ? g.y > BH - 0.7 : g.y < 0.7)) { g.status = 'retirado'; }
@@ -247,22 +255,23 @@ export function runPhase(b: BattleState, techAtk: [number, number] = [1, 1]) {
       fx.push({ k: 'melee', a: a.id, b: c.id });
       for (const [att, def] of [[a, c], [c, a]] as [BGroup, BGroup][]) {
         if (att.status === 'huida') continue;
-        const ad = UNIT[att.type], dd = UNIT[def.type]; const dir = hitDir(att, def);
+        const ad = ST(att), dd = ST(def); const dir = hitDir(att, def);
         const frontage = dir === 'frente' ? Math.min(att.w, def.w) : Math.min(att.w, 1.8);
         const engaged = Math.min(att.men, frontage * ad.density * 2) / (nC.get(att.id) || 1);
         const ta = TILE[tileAt(b, att.x, att.y)], td = TILE[tileAt(b, def.x, def.y)];
-        let s = engaged * ad.atk * (1 + att.exp * 0.25) * (0.55 + 0.45 * att.morale / 100) * (1 - att.fatigue / 220) * (0.6 + 0.4 * att.cohesion / 100) * INT[att.intensity].dealt * ta.atk * sideMods(b, att.side).atk * techAtk[att.side];
+        let s = engaged * ad.atk * (att.train ? 0.85 : 1) * (1 + att.exp * 0.25) * (0.55 + 0.45 * att.morale / 100) * (1 - att.fatigue / 220) * (0.6 + 0.4 * att.cohesion / 100) * INT[att.intensity].dealt * ta.atk * sideMods(b, att.side).atk;
         s *= ad.terrain[biomeOfTile(tileAt(b, att.x, att.y))] ?? 1;
         if (td.def > 1 && ta.def <= 1) s *= 0.85; // atacar cuesta arriba / en bosque
         if (dir === 'flanco') s *= 1.45; if (dir === 'retaguardia') s *= 1.9;
         if (att.status === 'desorganizado') s *= 0.75;
         let impact = false;
-        if ((att.order === 'cargar' || ad.charge > 0.9) && !att.charged && att.contactTicks === 0) { impact = true; const anti = dd.antiCav >= 2 && dir === 'frente' && def.status !== 'desorganizado' ? true : false; if (anti && ad.cav) { s *= 0.6; att.morale -= 12; att.cohesion -= 15; logp(`La carga de ${ad.name} se estrella contra las picas de ${dd.name}.`, att.side); b.decisive.push(`Fase ${ph}: carga fallida de ${ad.name} contra ${dd.name}.`); } else { s *= 1 + ad.charge + (att.order === 'cargar' ? 0.3 : 0); def.cohesion -= 12 * (1 + ad.charge); } att.charged = true; att.fatigue += 6; }
+        if ((att.order === 'cargar' || ad.charge > 0.9) && !att.charged && att.contactTicks === 0) { impact = true; const anti = dd.antiCav >= 2 && dir === 'frente' && def.status !== 'desorganizado' ? true : false; if (anti && ad.cav) { s *= 0.6; att.morale -= 12; att.cohesion -= 15; logp(`La carga de ${ad.name} se estrella contra las picas de ${dd.name}.`, att.side); b.decisive.push(`Fase ${ph}: carga fallida de ${ad.name} contra ${dd.name}.`); } else { const rough = [1, 7].includes(tileAt(b, att.x, att.y)) || [1, 7].includes(tileAt(b, def.x, def.y)) ? 0.3 : 1; s *= 1 + (ad.charge + (att.order === 'cargar' ? 0.3 : 0)) * rough; def.cohesion -= 12 * (1 + ad.charge) * rough; } att.charged = true; att.fatigue += 6; }
         if (ad.cav === false && dd.cav) s *= ad.antiCav;
         let defv = dd.def * (1 + def.exp * 0.2) * (0.6 + 0.4 * def.cohesion / 100) * td.def / INT[def.intensity].taken * (def.order === 'mantener' ? 1.15 : 1);
         defv *= dd.terrain[biomeOfTile(tileAt(b, def.x, def.y))] ?? 1;
         if (def.status === 'huida') defv *= 0.4;
-        const n = s / Math.max(0.5, defv) * 0.0095 * (def.status === 'huida' ? 2.5 : 1);
+        if (dd.reload >= 3 && (def.rl || 0) > 0) defv *= 0.8; // sorprendidos mientras recargan
+        const n = s / Math.max(0.5, defv) * 0.0095 * (def.status === 'huida' ? 2.5 : 1) * penF(ad.pen, dd.armor);
         const e = loss.get(def.id); if (e) e.n += n; else loss.set(def.id, { n, src: dir, routed: def.status === 'huida', attacker: att });
         if (dir !== 'frente') def.lastHit = dir;
         if (impact && dir !== 'frente') b.decisive.push(`Fase ${ph}: ${ad.name} carga contra el ${dir} de ${dd.name}.`);
@@ -270,15 +279,22 @@ export function runPhase(b: BattleState, techAtk: [number, number] = [1, 1]) {
     }
     // 3. tiro
     for (const g of b.groups) {
-      const d = UNIT[g.type]; if (!alive(g) || d.ranged <= 0) continue;
+      const d = ST(g); if (!alive(g) || d.ranged <= 0) continue;
       if (b.groups.some(o => o.side !== g.side && onField(o) && o.status !== 'huida' && inContact(g, o))) continue;
+      if ((g.rl || 0) > 0) { g.rl!--; continue; }
+      if (g.ammo != null && g.ammo <= 0) continue;
       if (!['disparar', 'hostigar', 'mantener', 'avanzar', 'replegarse'].includes(g.order) && !(d.cav && g.order === 'flanquear')) continue;
       const R = rangeOf(b, g); let t = G(b, g.target); if (!t || !onField(t) || Math.hypot(t.x - g.x, t.y - g.y) > R) t = null;
       if (!t) { let bd = 1e9; for (const o of b.groups) if (o.side !== g.side && onField(o) && !hiddenFrom(b, g.side as 0 | 1, o)) { const dd = Math.hypot(o.x - g.x, o.y - g.y); if (dd <= R && dd < bd) { bd = dd; t = o; } } }
       if (!t) continue;
       const dist = Math.hypot(t.x - g.x, t.y - g.y); const shooters = Math.min(g.men, g.w * d.density * 2);
       const cover = TILE[tileAt(b, t.x, t.y)].los ? 0.6 : 1; const hill = tileAt(b, g.x, g.y) === 2 ? 1.15 : 1;
-      const n = shooters * d.ranged * (0.55 + 0.45 * g.morale / 100) * (1 - dist / R * 0.4) * cover * hill * los(b, g, t) * INT[g.intensity].dealt * 0.0045 / (UNIT[t.type].def * 0.4 + 1.5);
+      const td = ST(t);
+      // apoyo de fuego: un blanco trabado en combate con tropas propias no puede cubrirse
+      const pinned = b.groups.some(o => o.side === g.side && onField(o) && o.status !== 'huida' && inContact(o, t)) ? 1.3 : 1;
+      const n = shooters * d.ranged * (d.precision / 0.7) * (g.train ? 0.8 : 1) * (0.55 + 0.45 * g.morale / 100) * (1 - dist / R * 0.4) * cover * hill * los(b, g, t) * INT[g.intensity].dealt * 0.0045 / (td.mprot * 0.5 + 1.5) * penF(d.rpen, td.mprot) * td.size * pinned;
+      g.rl = d.reload - 1; g.volleys = (g.volleys || 0) + 1;
+      if (g.ammo != null) { g.ammo--; if (g.ammo === 0) logp(`${d.name} (${SECTOR_NAMES[g.sector]}) agota su munición.`, g.side); }
       const e = loss.get(t.id); if (e) e.n += n; else loss.set(t.id, { n, src: 'tiro', routed: t.status === 'huida', attacker: g });
       g.fatigue = Math.min(100, g.fatigue + 0.4); fx.push({ k: 'tiro', a: g.id, b: t.id });
     }
@@ -292,18 +308,18 @@ export function runPhase(b: BattleState, techAtk: [number, number] = [1, 1]) {
         if (L.routed) { const pursuers = L.attacker; const cap = UNIT[pursuers.type].cav ? 0.45 : 0.3; g.killed += Math.round(n * 0.3); g.captured += Math.round(n * cap); g.wounded += Math.round(n * 0.15); g.dispersed += n - Math.round(n * 0.3) - Math.round(n * cap) - Math.round(n * 0.15); }
         else { g.killed += Math.round(n * 0.33); g.wounded += Math.round(n * 0.52); g.deserted += Math.round(n * 0.05); g.dispersed += n - Math.round(n * 0.33) - Math.round(n * 0.52) - Math.round(n * 0.05); }
         const frac = n / Math.max(1, before);
-        g.morale -= frac * 180 * INT[g.intensity].mor * sideMods(b, g.side).mor * (L.src === 'tiro' ? 0.7 : 1) * (UNIT[g.type].id === 'milicia' ? 1.2 : 1);
-        g.cohesion -= frac * 80 * INT[g.intensity].coh;
+        g.morale -= frac * 180 * INT[g.intensity].mor * sideMods(b, g.side).mor * (L.src === 'tiro' ? 0.7 : 1) * (1.2 - ST(g).discipline * 0.004) * (g.train ? 1.15 : 1);
+        g.cohesion -= frac * 80 * INT[g.intensity].coh * (1.4 - ST(g).discipline / 125);
         if (L.src === 'flanco') g.morale -= 1.5; if (L.src === 'retaguardia') g.morale -= 3;
       }
-      if (engaged) { g.fatigue = Math.min(100, g.fatigue + 1.8 * INT[g.intensity].fat); if (g.intensity === 'agresiva' || g.intensity === 'desesperada') g.cohesion -= 0.5 * INT[g.intensity].coh; }
-      else if (!L && g.status !== 'huida') { g.morale = Math.min(UNIT[g.type].morale + 25, g.morale + 0.6); g.fatigue = Math.max(0, g.fatigue - (g.order === 'mantener' ? 1.5 : 0.3)); g.cohesion = Math.min(100, g.cohesion + (g.order === 'mantener' ? 1.2 : 0.3)); }
+      if (engaged) { g.fatigue = Math.min(100, g.fatigue + 1.8 * INT[g.intensity].fat * fatF(g)); if (g.intensity === 'agresiva' || g.intensity === 'desesperada') g.cohesion -= 0.5 * INT[g.intensity].coh; }
+      else if (!L && g.status !== 'huida') { g.morale = Math.min(ST(g).morale + 25, g.morale + 0.6); g.fatigue = Math.max(0, g.fatigue - (g.order === 'mantener' ? 1.5 : 0.3)); g.cohesion = Math.min(100, g.cohesion + (g.order === 'mantener' ? 1.2 : 0.3)); }
       if (g.fatigue > 85) g.morale -= 0.4;
       // pánico contagioso
       if (g.status !== 'huida') for (const o of b.groups) if (o !== g && o.side === g.side && o.status === 'huida' && Math.hypot(o.x - g.x, o.y - g.y) < 3) g.morale -= 0.6;
       g.cohesion = Math.max(0, g.cohesion); g.morale = Math.max(0, g.morale);
       // estados
-      const thr = g.intensity === 'desesperada' ? 3 : UNIT[g.type].morale >= 75 ? 11 : 15;
+      const thr = g.intensity === 'desesperada' ? 3 : 21 - ST(g).discipline * 0.13;
       if (g.men < Math.max(10, g.startMen * 0.04) && g.status !== 'retirado') { g.dispersed += g.men; g.men = 0; g.status = 'destruido'; logp(`${UNIT[g.type].name} (${SECTOR_NAMES[g.sector]}) queda aniquilada.`, g.side); continue; }
       if (g.status !== 'huida' && g.morale <= thr) {
         g.status = 'huida'; logp(`¡${UNIT[g.type].name} del ${SECTOR_NAMES[g.sector].toLowerCase()} rompe filas y huye!`, g.side);
@@ -316,9 +332,17 @@ export function runPhase(b: BattleState, techAtk: [number, number] = [1, 1]) {
     const act = [0, 1].map(s => b.groups.filter(g => g.side === s && alive(g)).length);
     if (!act[0] || !act[1]) { finish(b, !act[0] && !act[1] ? (1 - b.attackerSide) as 0 | 1 : (act[0] ? 0 : 1)); break; }
   }
-  if ((b.stage as string) !== 'fin' && b.phase >= b.maxPhases) { logp('Cae la noche: el atacante no logra desalojar al defensor.'); b.decisive.push(`El defensor resiste ${b.maxPhases} fases y conserva el campo.`); finish(b, (1 - b.attackerSide) as 0 | 1); }
+  if ((b.stage as string) !== 'fin' && b.phase >= b.maxPhases) {
+    // al caer la noche, un defensor claramente superado se retira; si no, conserva el campo
+    const att = b.attackerSide, def = (1 - att) as 0 | 1; const pa = fieldPower(b, att), pd = fieldPower(b, def);
+    if (pa > pd * 1.5) { logp('Cae la noche: el defensor, muy superado, abandona el campo.'); b.decisive.push(`Al caer la noche el defensor se retira ante una fuerza muy superior (${(pa / Math.max(1, pd)).toFixed(1)}:1).`); finish(b, att); }
+    else { logp('Cae la noche: el atacante no logra desalojar al defensor.'); b.decisive.push(`El defensor resiste ${b.maxPhases} fases y conserva el campo.`); finish(b, def); }
+  }
   b.rngS = r.s;
 }
+/** Fuerza efectiva en el campo: efectivos en pie × calidad × moral × cohesión. */
+export function fieldPower(b: BattleState, side: 0 | 1) { return b.groups.filter(g => g.side === side && alive(g)).reduce((s, g) => { const d = ST(g); return s + g.men * (d.atk + d.def + d.armor * 0.5 + ((g.ammo ?? 1) > 0 ? d.ranged / Math.max(1, d.reload) : 0)) * (0.3 + g.morale / 100) * (0.5 + g.cohesion / 200); }, 0); }
+function fatF(g: BGroup) { return fatigueRate(ST(g)); }
 function biomeOfTile(t: number): string { return t === 1 ? 'bosque' : t === 2 ? 'colinas' : t === 7 ? 'pantano' : 'llanura'; }
 function finish(b: BattleState, winner: 0 | 1) {
   b.winner = winner; b.stage = 'fin';
@@ -333,7 +357,7 @@ function finish(b: BattleState, winner: 0 | 1) {
 // IA táctica: usada por los reinos IA y por la resolución automática/delegación del jugador (mismo motor)
 export function aiOrders(b: BattleState, side: 0 | 1, onlyIdle = false) {
   const mine = b.groups.filter(g => g.side === side && alive(g)), theirs = b.groups.filter(g => g.side !== side && alive(g));
-  const pw = (gs: BGroup[]) => gs.reduce((s, g) => { const d = UNIT[g.type]; return s + g.men * (d.atk + d.def + d.ranged) * (0.5 + g.morale / 200); }, 0);
+  const pw = (gs: BGroup[]) => gs.reduce((s, g) => { const d = ST(g); return s + g.men * (d.atk + d.def + d.armor * 0.5 + ((g.ammo ?? 1) > 0 ? d.ranged / Math.max(1, d.reload) : 0)) * (0.5 + g.morale / 200); }, 0);
   const ratio = pw(mine) / Math.max(1, pw(theirs)); const defender = side !== b.attackerSide;
   const desp = desperateAllowed(b, side) && ratio < 0.5 && b.phase > 3;
   const intensity: Intensity = desp ? 'desesperada' : ratio > 1.4 ? 'agresiva' : ratio < 0.75 ? 'prudente' : 'equilibrada';
@@ -346,8 +370,16 @@ export function aiOrders(b: BattleState, side: 0 | 1, onlyIdle = false) {
     if (theirs.some(t => t.status === 'huida') && cat === 'cav' && ratio > 1) { g.order = 'perseguir'; continue; }
     if (g.sector === 'reserva' && b.phase < 3 && !friendRouted && ratio < 1.6) { g.order = 'mantener'; continue; }
     if (ratio < 0.35 && b.phase > 2 && !defender) { g.order = 'retirarse'; continue; }
-    if (cat === 'ranged') { g.order = dist <= rangeOf(b, g) ? 'disparar' : (defender && ratio < 1.1 ? 'mantener' : 'avanzar'); continue; }
-    if (cat === 'cav') { const rt = theirs.filter(t => unitCat(UNIT[t.type]) === 'ranged'); const tgt = rt.length ? rt[0] : theirs.reduce((a, t) => t.men < a.men ? t : a, theirs[0]); g.order = ratio < 0.6 ? 'hostigar' : 'flanquear'; g.target = tgt.id; continue; }
+    if (cat === 'siege') { g.order = d.range > 0 && dist <= rangeOf(b, g) ? 'disparar' : 'mantener'; continue; }
+    if (cat === 'ranged' && (g.ammo ?? 1) <= 0) { g.order = d.cav ? 'flanquear' : 'mantener'; if (d.cav) g.target = theirs.reduce((a, t) => t.men < a.men ? t : a, theirs[0]).id; continue; }
+    if (cat === 'ranged') { g.order = dist <= rangeOf(b, g) ? (d.cav ? 'hostigar' : 'disparar') : (defender && ratio < 1.1 && !d.cav ? 'mantener' : d.cav ? 'hostigar' : 'avanzar'); continue; }
+    if (cat === 'cav') {
+      // la caballería busca enemigos ya trabados con los nuestros (ruptura), tiradores o máquinas; no se estrella contra picas y lanzas frescas
+      const engagedE = theirs.filter(t => mine.some(m => inContact(m, t))); const soft = theirs.filter(t => ['ranged', 'siege'].includes(unitCat(UNIT[t.type])));
+      let tgt: BGroup | null = engagedE.length ? engagedE.reduce((a, t) => t.morale < a.morale ? t : a, engagedE[0]) : soft.length ? soft.reduce((a, t) => Math.hypot(t.x - g.x, t.y - g.y) < Math.hypot(a.x - g.x, a.y - g.y) ? t : a, soft[0]) : null;
+      if (!tgt) { const weak = theirs.filter(t => ST(t).antiCav < 1.5 || t.status === 'desorganizado'); if (weak.length && (ST(g).charge >= 1.2 || ratio > 1.3)) tgt = weak.reduce((a, t) => t.men < a.men ? t : a, weak[0]); }
+      if (!tgt) { g.order = b.phase > 8 && !defender ? 'atacar' : 'mantener'; continue; }
+      g.order = ratio < 0.6 ? 'hostigar' : 'flanquear'; g.target = tgt.id; continue; }
     if (defender && ratio < 1.05 && b.phase < 6) { g.order = 'mantener'; continue; }
     g.order = (cat === 'heavy' && dist > 3) ? 'cargar' : 'atacar'; g.target = null;
   }
@@ -356,12 +388,12 @@ export function aiOrders(b: BattleState, side: 0 | 1, onlyIdle = false) {
 export function aiDeploy(b: BattleState, side: 0 | 1) {
   const S = b.sides[side]; const defender = side !== b.attackerSide; const cav = S.units.some(u => UNIT[u.type].cav);
   const enemyCav = b.sides[1 - side].units.some(u => UNIT[u.type].cav);
-  const f = enemyCav && S.units.some(u => u.type === 'piqueros') ? 'anticaballeria' : defender ? (b.minWidth < 16 ? 'profundidad' : 'defensiva') : cav ? 'envolvente' : 'equilibrada';
+  const f = enemyCav && S.units.some(u => UNIT[u.type].antiCav >= 2) ? 'anticaballeria' : defender ? (b.minWidth < 16 ? 'profundidad' : 'defensiva') : cav ? 'envolvente' : 'equilibrada';
   applyDeployment(b, side, formationDeployment(S, f));
 }
-export function autoResolve(b: BattleState, techAtk: [number, number] = [1, 1]) {
+export function autoResolve(b: BattleState) {
   if (!b.groups.some(g => g.side === 0)) aiDeploy(b, 0); if (!b.groups.some(g => g.side === 1)) aiDeploy(b, 1);
-  let guard = 0; while (b.stage !== 'fin' && guard++ < 20) { aiOrders(b, 0); aiOrders(b, 1); runPhase(b, techAtk); }
+  let guard = 0; while (b.stage !== 'fin' && guard++ < 20) { aiOrders(b, 0); aiOrders(b, 1); runPhase(b); }
 }
 export function sideTotals(b: BattleState, side: 0 | 1) {
   const gs = b.groups.filter(g => g.side === side); const t = { start: 0, end: 0, killed: 0, wounded: 0, captured: 0, deserted: 0, dispersed: 0 };

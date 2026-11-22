@@ -21,8 +21,27 @@ Controles: arrastrar para mover el mapa, rueda para el zoom, clic para seleccion
 
 `src/ui`: Atlas en canvas con 13 capas y niebla de pergamino, paneles, ventanas, vista táctica, y retratos, escudos y vistas de ciudad en SVG generados.
 
+## Sistema militar (ampliación, fase 1)
+
+- **Catálogo modular** en `src/engine/milcat.ts`: edades, armas, protecciones y tipos de unidad. Las estadísticas de cada unidad se derivan de su base (especie e instrucción), su arma, su protección y su nivel de equipo, así que añadir contenido es añadir filas a esas tablas.
+- **27 tipos de unidad** de las edades I y II, con **28 atributos independientes**. Los que no se aplican, como el combustible de un arquero, aparecen como «no aplica».
+- **Combate**:
+  - La penetración se compara con la armadura del blanco.
+  - Los tiradores tienen munición limitada y cadencia propia. Los ballesteros defienden peor mientras recargan.
+  - Las cargas pierden fuerza en bosques y pantanos.
+  - Un blanco trabado con tropas propias recibe más daño de tiro.
+- **Estado de las tropas**:
+  - La disciplina, la resistencia física, la ocultación y el reconocimiento tienen efecto real.
+  - Las tropas recién reclutadas pasan meses en instrucción.
+- **Equipo y regimientos**:
+  - Hay niveles de equipo de Obsoleto a De élite, que dependen de la herrería, la armería y las técnicas.
+  - Los regimientos guardan su historial, sus batallas, sus comandantes y sus condecoraciones.
+  - Modernizar un regimiento conserva su nombre y el 75% de su experiencia.
+- **Partidas guardadas**: las de la versión 1 se convierten solas a la versión 2.
+- **Simulaciones de equilibrio**: `npm run test:balance` ejecuta enfrentamientos automáticos con el mismo motor del juego. Sale con error si alguna comprobación falla.
+
 ## Criterios de aceptación (sección 35)
 Todos se han comprobado jugando en Chromium automatizado: iniciar partida, elegir reino, Atlas, seleccionar provincias, producción y población, construir con recursos reales, ver la obra (andamios y después el edificio en el mapa y en la vista de ciudad), avanzar el tiempo, investigar, reclutar, mover ejércitos con ruta y riesgos, suministros, despliegue, órdenes por fases, bajas persistentes, expediciones, descubrimiento y niebla, diplomacia con motivos y contraofertas, IA autónoma (guerras, tratados, colonias y expediciones propias), guardar y cargar.
 
 ## Pendiente (también se indica dentro del juego, en Partida)
-Flotas y batallas navales; rutas comerciales dibujadas; matrimonios e intrigas; religión y cultura; asedios tácticos; más mundos diseñados a mano; sonido.
+Ampliación militar, fases 2 a 5 (producción militar, plantillas, pólvora, doctrinas, coordinación entre armas, armada, edades III a XII y aviación); flotas y batallas navales; rutas comerciales dibujadas; matrimonios e intrigas; religión y cultura; asedios tácticos; más mundos diseñados a mano; sonido.

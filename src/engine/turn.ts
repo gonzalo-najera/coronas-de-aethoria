@@ -2,6 +2,7 @@
 import type { GameState, Army, Kingdom } from './types';
 import type { World } from './world';
 import { UNIT, SPECIES } from './data';
+import { regOf } from './equipment';
 import { rngOf, saveRng, armyMen, atWar, allied, alert, chron, updateVisibility, updateContacts, invalidateVis, dateOf, totalPop, makeCharacter, rel, nid, kprovs, relKey, pickSpecies } from './game';
 import { processEconomy, kingdomEconomy } from './economy';
 import { moveArmies, logistics, processSieges, retreatTarget, findPath } from './military';
@@ -59,23 +60,37 @@ function detectBattles(w: World, g: GameState): number {
     if (!attackers.length || !defenders.length) continue;
     const b = createBattle(w, g, a.prov, attackers, defenders);
     if (b.playerSide === 0) { aiDeploy(b, 1); g.pendingBattles.push(b); alert(g, 'critica', `¡Batalla inminente en ${w.provinces[a.prov].name}!`, { prov: a.prov }); n++; }
-    else { const ta = techAtkFor(g, b); autoResolve(b, ta); applyBattle(w, g, b); }
+    else { autoResolve(b); applyBattle(w, g, b); }
   }
   return n;
 }
-export function techAtkFor(g: GameState, b: BattleState): [number, number] { return [b.sides[0], b.sides[1]].map(s => g.kingdoms[s.kid].techs.includes('acero') ? 1.12 : 1) as [number, number]; }
 
 export function applyBattle(w: World, g: GameState, b: BattleState) {
   const win = b.winner as 0 | 1, lose = (1 - win) as 0 | 1; const rep: any = { id: b.id, prov: b.prov, turn: g.turn, field: b.fieldName, phases: b.phase, winner: b.sides[win].kid, loser: b.sides[lose].kid, sides: [] as any[], decisive: b.decisive.slice(0, 6), consequences: [] as string[] };
   const ws = w.provinces[b.prov];
   for (const s of [0, 1] as const) {
-    const S = b.sides[s]; const t = sideTotals(b, s); const after = sideUnitsAfter(b, s);
+    const S = b.sides[s];
+    // cirujanos de campaña: parte de los caídos se recupera como heridos
+    if (g.kingdoms[S.kid].techs.includes('cirujanos')) for (const q of b.groups) if (q.side === s) { const m = Math.round(q.killed * 0.1); q.killed -= m; q.wounded += m; }
+    const t = sideTotals(b, s); const after = sideUnitsAfter(b, s);
     const armies = S.armies.map(id => g.armies.find(a => a.id === id)).filter(Boolean) as Army[];
+    const pre = armies.flatMap(a => a.units.map(u => ({ a, u, men: u.men })));
+    const ammoLeft: Record<string, number> = {}; for (const type in after) { const gs = b.groups.filter(q => q.side === s && q.type === type && (q.maxAmmo || 0) > 0); const mx = gs.reduce((x, q) => x + (q.maxAmmo || 0) * q.startMen, 0); if (mx > 0) ammoLeft[type] = gs.reduce((x, q) => x + (q.ammo ?? q.maxAmmo ?? 0) * q.startMen, 0) / mx; }
     // reparto proporcional de supervivientes entre los ejércitos del bando
     for (const type in after) {
       const tot = armies.reduce((x, a) => x + (a.units.find(u => u.type === type)?.men || 0), 0) || 1;
-      for (const a of armies) { const u = a.units.find(x => x.type === type); if (!u) continue; const share = u.men / tot; u.men = Math.floor(after[type].men * share); a.wounded[type] = (a.wounded[type] || 0) + Math.floor((after[type].wounded + after[type].dispersed * 0.5) * share); u.exp = Math.min(1, u.exp + (s === win ? 0.08 : 0.04)); }
+      for (const a of armies) { const u = a.units.find(x => x.type === type); if (!u) continue; const share = u.men / tot; u.men = Math.floor(after[type].men * share); a.wounded[type] = (a.wounded[type] || 0) + Math.floor((after[type].wounded + after[type].dispersed * 0.5) * share); u.exp = Math.min(1, u.exp + (s === win ? 0.08 : 0.04)); if (ammoLeft[type] != null) u.amm = Math.max(0, Math.min(u.amm ?? 1, ammoLeft[type])); }
     }
+    // historial de los regimientos
+    const enemyStart = sideTotals(b, (1 - s) as 0 | 1).start; const won = s === win;
+    for (const { a, u, men } of pre) { const r = regOf(g, u); if (!r) continue; const lost = Math.max(0, men - u.men);
+      r.battles++; if (won) r.wins++; else r.losses++; r.casualties += lost;
+      if (a.general && !r.commanders.includes(a.general.name)) { r.commanders.push(a.general.name); if (r.commanders.length > 8) r.commanders.shift(); }
+      const dec = (d: string) => { if (!r.decorations.includes(d)) { r.decorations.push(d); r.history.push({ turn: g.turn, text: 'Condecoración: ' + d + '.' }); } };
+      r.history.push({ turn: g.turn, text: `Batalla de ${b.fieldName}: ${won ? 'victoria' : 'derrota'}; ${lost.toLocaleString('es')} bajas de ${men.toLocaleString('es')}.` });
+      if (won && r.wins === 1) dec('Bautismo de fuego'); if (r.wins === 5) dec('Estandarte de las cinco victorias'); if (r.wins === 15) dec('Regimiento legendario');
+      if (won && t.start < enemyStart * 0.8) dec('Honor de la desigualdad'); if (won && lost > men * 0.4) dec('Mención al sacrificio');
+      if (u.men <= 0 && !a.wounded[u.type]) { r.active = false; r.history.push({ turn: g.turn, text: `Aniquilado en ${b.fieldName}.` }); } }
     for (const a of armies) { a.units = a.units.filter(u => u.men > 0); a.morale = Math.max(5, Math.min(95, a.morale + (s === win ? 10 : -25))); a.lastBattle = g.turn; a.path = []; }
     // población: los muertos, prisioneros y desertores no vuelven
     const gone = t.killed + t.captured + t.deserted + Math.floor(t.dispersed * 0.5);

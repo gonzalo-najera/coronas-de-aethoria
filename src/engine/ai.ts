@@ -4,6 +4,7 @@ import type { World } from './world';
 import { BUILDINGS, TECHS, UNIT } from './data';
 import { rngOf, saveRng, armyMen, rel, atWar, kprovs, totalPop, alert } from './game';
 import { buildCheck, startBuild, kingdomEconomy, trade, marketPrice } from './economy';
+import { obsoleteBy, bestTier, armsCost } from './equipment';
 import { recruit, recruitOptions, findPath, armyStrength, canEnter } from './military';
 import { evaluate, propose, declareWar, warsOf, power, PROP_NAMES, Proposal } from './diplomacy';
 import { launchExpedition, expCheck, colonyCheck, startColony } from './exploration';
@@ -20,7 +21,7 @@ export function runAI(w: World, g: GameState) {
     const P = W8[k.personality] || W8.prudente;
     const eco = kingdomEconomy(w, g, k.id);
     // 1. investigación
-    if (!k.research.current) { const av = TECHS.filter(t => !k.techs.includes(t.id) && t.req.every(q => k.techs.includes(q))); if (av.length) k.research.current = r.weighted(av, t => (t.unlocks.some(u => u.kind === 'Unidad') ? P.mil! : 1) * (['Comercio', 'Construcción naval'].includes(t.branch) ? P.trade! : 1) * (['Educación', 'Matemáticas'].includes(t.branch) ? P.sci! : 1) * (k.personality === 'explorador' && ['Cartografía', 'Navegación'].includes(t.branch) ? 2.5 : 1)).id; }
+    if (!k.research.current) { const av = TECHS.filter(t => !k.techs.includes(t.id) && t.req.every(q => k.techs.includes(q))); if (av.length) k.research.current = r.weighted(av, t => (t.mil || t.unlocks.some(u => u.kind === 'Unidad') ? P.mil! : 1) * (['Comercio', 'Construcción naval'].includes(t.branch) ? P.trade! : 1) * (['Educación', 'Matemáticas'].includes(t.branch) ? P.sci! : 1) * (k.personality === 'explorador' && ['Cartografía', 'Navegación'].includes(t.branch) ? 2.5 : 1)).id; }
     // 2. economía: comprar alimentos si faltan
     if (eco.net.alimentos < 0 && k.stock.alimentos < -eco.net.alimentos * 4) { const q = Math.ceil(-eco.net.alimentos * 3); if (k.stock.oro > q * marketPrice(w, g, k.id, 'alimentos', true) + 40) trade(w, g, k.id, 'alimentos', q); }
     if (k.stock.madera > 1200) trade(w, g, k.id, 'madera', -200); if (k.stock.piedra > 1200) trade(w, g, k.id, 'piedra', -200);
@@ -48,7 +49,12 @@ export function runAI(w: World, g: GameState) {
     const target = pop * 0.025 * P.mil! * (enemies.length ? 1.6 : 1) * (k.independent ? 0.6 : 1);
     if (men < target && k.stock.oro > 120 && eco.net.oro > 1 && rnd() < 0.5) {
       const capP = g.provinces[k.capital]; const opts = recruitOptions(w, g, k.id, k.capital).filter(o => !o.why.length && o.pool > 200);
-      if (opts.length) { const o = r.weighted(opts, o => o.u.id === 'milicia' ? 0.6 : o.u.id === 'gigantes' ? 0.2 : 1 + o.u.atk / 10); const n = Math.min(o.pool, 600, Math.floor((k.stock.oro - 80) / o.u.cost.oro * 100), Math.floor(k.stock.armas / Math.max(0.1, o.u.cost.armas) * 100)); if (n >= 100) recruit(w, g, k.id, capP.id, o.u.id, n); }
+      if (opts.length) {
+        // la IA prefiere tipos no obsoletos, equilibra tiradores y caballería, y evita máquinas de asedio si no está asediando
+        const have: Record<string, number> = {}; for (const a of g.armies) if (a.owner === k.id) for (const u of a.units) { const c = UNIT[u.type].role; have[c] = (have[c] || 0) + u.men; } const tot = Object.values(have).reduce((x, y) => x + y, 0) || 1;
+        const o = r.weighted(opts, o => { const d = o.u; let wgt = d.id === 'milicia' ? 0.5 : 1 + (d.atk + d.def + d.ranged / Math.max(1, d.reload)) / 12; if (d.role === 'asedio' || d.role === 'ingenieros') wgt *= 0.08; if (d.species === 'gigante') wgt *= 0.2; if (obsoleteBy(k, d.id).length) wgt *= 0.25; if (d.role === 'tiradores' && (have.tiradores || 0) / tot < 0.25) wgt *= 1.8; if (d.cav && (have.caballeria || 0) / tot < 0.15) wgt *= 1.5; if (d.training >= 4) wgt *= 0.7; return wgt; });
+        const tier = bestTier(g, k.id, capP.id); const ac = Math.max(0.1, armsCost(o.u.id, tier, 100));
+        const n = Math.min(o.pool, 600, Math.floor((k.stock.oro - 80) / o.u.cost.oro * 100), Math.floor(k.stock.armas / ac * 100)); if (n >= (o.u.species === 'gigante' ? 5 : 100)) recruit(w, g, k.id, capP.id, o.u.id, n, tier); }
     }
     // 5. operaciones militares (solo con información conocida)
     const myArmies = g.armies.filter(a => a.owner === k.id);

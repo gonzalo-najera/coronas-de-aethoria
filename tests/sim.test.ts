@@ -23,3 +23,9 @@ const g2 = migrate(JSON.parse(s)); const w2 = generateWorld(g2.seed); console.lo
 const A = newGame({ seed: 1347, player: 0, difficulty: 1 }), B = newGame({ seed: 1347, player: 0, difficulty: 1 });
 for (let i = 0; i < 24; i++) { for (const X of [A, B]) { endTurn(X.w, X.g); while (X.g.pendingBattles.length) { const b = X.g.pendingBattles.shift(); autoResolve(b); applyBattle(X.w, X.g, b); } X.g.events = []; } }
 console.log('reproducible', serialize(A.g) === serialize(B.g));
+// ampliación militar: composición de los ejércitos de la IA, regimientos y migración de partidas v1
+const types: Record<string, number> = {}; for (const a of g.armies) for (const u of a.units) types[u.type] = (types[u.type] || 0) + u.men;
+console.log('tipos en servicio', JSON.stringify(types));
+console.log('regimientos', g.regiments.length, 'activos', g.regiments.filter(r => r.active).length, 'con batallas', g.regiments.filter(r => r.battles > 0).length);
+const v1 = JSON.parse(s); v1.version = 1; delete v1.regiments; for (const a of v1.armies) for (const u of a.units) { delete u.tier; delete u.rid; delete u.train; delete u.amm; }
+const m1 = migrate(v1); console.log('migración v1→v2', m1.version, 'regimientos', m1.regiments.length, 'unidades sin regimiento', m1.armies.flatMap(a => a.units).filter(u => u.rid == null).length, 'validate', validate(m1, w2));

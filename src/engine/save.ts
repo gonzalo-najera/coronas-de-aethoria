@@ -2,6 +2,7 @@
 import type { GameState } from './types';
 import { SAVE_VERSION } from './game';
 import { generateWorld, World } from './world';
+import { ensureMilitary } from './equipment';
 
 const DB = 'coronas-de-aethoria', STORE = 'saves';
 let mem: Record<string, any> = {};
@@ -18,7 +19,15 @@ export function serialize(g: GameState) { return JSON.stringify(g); }
 export function migrate(o: any): GameState {
   if (!o || typeof o !== 'object' || !o.version) throw new Error('Archivo de guardado no válido');
   if (o.version > SAVE_VERSION) throw new Error('El guardado procede de una versión más reciente del juego');
-  // versión 1: formato actual. Futuras migraciones se encadenarán aquí.
+  // v1 → v2: ampliación militar. Niveles de equipo, regimientos con historial y fin del +12% global del acero
+  // (las tropas de los reinos que ya lo dominaban pasan a equipo Avanzado, conservando su fuerza).
+  if (o.version < 2) {
+    o.regiments = o.regiments || [];
+    for (const a of o.armies || []) { const k = o.kingdoms[a.owner]; for (const u of a.units) { if (u.tier == null) u.tier = k && k.techs.includes('acero') ? 3 : 2; u.train = u.train || 0; u.amm = u.amm ?? 1; } }
+    ensureMilitary(o as GameState, a => o.provinces[a.prov]?.cityName || 'el reino');
+    for (const r of o.regiments) if (r.history.length === 1) r.history[0].text = 'Regimiento registrado al reorganizar el ejército (partida anterior a la ampliación militar).';
+    o.version = 2;
+  }
   return o as GameState;
 }
 export function validate(g: GameState, w: World): string[] {
