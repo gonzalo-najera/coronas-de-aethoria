@@ -5,8 +5,10 @@ import { UNIT, SPECIES } from '../engine/data';
 import {
   BattleState, BGroup, BW, BH, TILE, SECTORS, SECTOR_NAMES, ORDER_NAMES, Order, Intensity, INT, FORMATIONS, Deployment, Sector,
   formationDeployment, applyDeployment, moveDeployed, deployZone, assessment, enemyEstimate, hiddenFrom, alive, desperateAllowed, runPhase, aiOrders, sideTotals, tileAt, unitCat,
+  ST, rangeOf,
 } from '../engine/battle';
-import { applyBattle, techAtkFor } from '../engine/turn';
+import { applyBattle } from '../engine/turn';
+import { tierName } from '../engine/milcat';
 import { portrait } from './art';
 import { esc, fmt, $ } from './util';
 
@@ -82,7 +84,7 @@ function draw() {
   }
   // grupos
   const sel = V.sel != null ? b.groups.find(q => q.id === V!.sel) : null;
-  if (sel && alive(sel)) { const d = UNIT[sel.type]; if (d.range > 0) { const p = posOf(sel); const R = d.range + (tileAt(b, sel.x, sel.y) === 2 ? 1 : 0); c.strokeStyle = 'rgba(200,150,40,.8)'; c.fillStyle = 'rgba(230,190,80,.1)'; c.setLineDash([5, 4]); c.beginPath(); c.arc(p.x * T, p.y * T, R * T, 0, 7); c.fill(); c.stroke(); c.setLineDash([]); }
+  if (sel && alive(sel)) { const d = ST(sel); { const p = posOf(sel); const V2 = 4.5 + d.recon / 40; c.strokeStyle = 'rgba(80,90,110,.55)'; c.setLineDash([2, 5]); c.beginPath(); c.arc(p.x * T, p.y * T, V2 * T, 0, 7); c.stroke(); c.setLineDash([]); } if (d.range > 0 && (sel.ammo ?? 1) > 0) { const p = posOf(sel); const R = rangeOf(b, sel); c.strokeStyle = 'rgba(200,150,40,.8)'; c.fillStyle = 'rgba(230,190,80,.1)'; c.setLineDash([5, 4]); c.beginPath(); c.arc(p.x * T, p.y * T, R * T, 0, 7); c.fill(); c.stroke(); c.setLineDash([]); }
     if (sel.target != null) { const tg = b.groups.find(q => q.id === sel.target); if (tg && !(tg.side === 1 && hiddenFrom(b, 0, tg))) { const p = posOf(sel), q = posOf(tg); c.strokeStyle = tg.side === 0 ? 'rgba(40,120,60,.9)' : 'rgba(180,30,20,.9)'; c.lineWidth = 2; c.beginPath(); c.moveTo(p.x * T, p.y * T); c.lineTo(q.x * T, q.y * T); c.stroke(); } } }
   for (const g of b.groups) {
     const st = frameStatus(g); if (st === 'retirado' || st === 'destruido') continue; if (g.side === 1 && hiddenFrom(b, 0, g)) continue;
@@ -120,6 +122,7 @@ function sym(c: CanvasRenderingContext2D, s: string, x: number, y: number, size:
     case 'scout': c.arc(0, 0, 6, 0, 7); c.moveTo(-9, 0); c.lineTo(9, 0); break;
     case 'shield': c.moveTo(-7, -7); c.lineTo(7, -7); c.lineTo(7, 1); c.quadraticCurveTo(0, 9, -7, 1); c.closePath(); break;
     case 'giant': c.arc(0, -4, 4, 0, 7); c.moveTo(-8, 8); c.lineTo(0, 0); c.lineTo(8, 8); break;
+    case 'siege': c.moveTo(-9, 6); c.lineTo(9, 6); c.moveTo(-6, 6); c.lineTo(0, -6); c.lineTo(6, 6); c.moveTo(0, -6); c.lineTo(-8, -8); c.moveTo(-6, 9); c.arc(-6, 9, 1.5, 0, 7); c.moveTo(6, 9); c.arc(6, 9, 1.5, 0, 7); break;
     default: c.arc(0, 0, 6, 0, 7);
   }
   c.stroke(); c.restore();
@@ -193,12 +196,13 @@ function combatHtml() {
   const b = V!.b; const sel = V!.sel != null ? b.groups.find(q => q.id === V!.sel) : null; const desp = desperateAllowed(b, 0);
   let gi = '<p class="small muted">Selecciona uno de tus grupos en el campo para darle órdenes. Los grupos sin órdenes nuevas mantienen la última.</p>';
   if (sel && sel.side === 0) {
-    const d = UNIT[sel.type]; const tgt = sel.target != null ? b.groups.find(q => q.id === sel.target) : null;
+    const d = ST(sel); const tgt = sel.target != null ? b.groups.find(q => q.id === sel.target) : null;
     gi = `<div class="grp"><h4>${esc(d.name)} · ${SECTOR_NAMES[sel.sector]}</h4>
-    <div class="stats"><span>Efectivos <b>${fmt(sel.men)}</b>/${fmt(sel.startMen)}</span><span>Estado <b>${STATUS_NAMES[sel.status]}</b></span><span>Moral <b>${Math.round(sel.morale)}</b></span><span>Cohesión <b>${Math.round(sel.cohesion)}</b></span><span>Fatiga <b>${Math.round(sel.fatigue)}</b></span><span>Experiencia <b>${Math.round(sel.exp * 100)}%</b></span><span>Terreno <b>${TILE[tileAt(b, sel.x, sel.y)].n}</b></span>${d.range ? `<span>Alcance <b>${d.range + (tileAt(b, sel.x, sel.y) === 2 ? 1 : 0)}</b></span>` : ''}</div>
+    <div class="stats"><span>Efectivos <b>${fmt(sel.men)}</b>/${fmt(sel.startMen)}</span><span>Estado <b>${STATUS_NAMES[sel.status]}</b></span><span>Moral <b>${Math.round(sel.morale)}</b></span><span>Cohesión <b>${Math.round(sel.cohesion)}</b></span><span>Fatiga <b>${Math.round(sel.fatigue)}</b></span><span>Experiencia <b>${Math.round(sel.exp * 100)}%</b></span><span>Terreno <b>${TILE[tileAt(b, sel.x, sel.y)].n}</b></span><span>Equipo <b>${tierName(sel.tier ?? 2)}</b></span><span>Armadura <b>${ST(sel).armor}</b></span>${d.range ? `<span>Alcance <b>${rangeOf(b, sel)}</b></span><span>Munición <b class="${(sel.ammo ?? 1) <= 0 ? 'neg' : ''}">${sel.ammo ?? '—'}/${sel.maxAmmo ?? '—'}</b></span>${d.reload > 1 ? `<span>Recarga <b>${(sel.rl || 0) > 0 ? 'recargando' : 'lista'}</b></span>` : ''}` : ''}${sel.train ? '<span class="neg">En instrucción</span>' : ''}</div>
+    <p class="small muted">Círculo dorado: alcance de tiro real (solo si queda munición). Círculo gris punteado: radio aproximado en el que detecta tropas ocultas en bosques.</p>
     <p class="small">Bajas: ${fmt(sel.killed)} muertos, ${fmt(sel.wounded)} heridos, ${fmt(sel.captured)} capturados, ${fmt(sel.deserted)} desertores, ${fmt(sel.dispersed)} dispersos.</p>
     ${alive(sel) ? `<h4>Orden: ${ORDER_NAMES[sel.order]}${tgt ? ' → ' + (tgt.side === 1 && hiddenFrom(b, 0, tgt) ? 'objetivo oculto' : esc(UNIT[tgt.type].name)) : ''}</h4>
-    <div class="orders">${ORDERS.map(o => { const dis = (o === 'disparar' || o === 'hostigar') && d.range === 0 || (o === 'perseguir' && !b.groups.some(q => q.side === 1 && q.status === 'huida')); return `<button class="${sel.order === o ? 'on' : ''}" data-b="order" data-o="${o}" ${dis ? 'disabled' : ''} title="${esc(ORDER_HELP[o])}">${ORDER_NAMES[o]}</button>`; }).join('')}</div>
+    <div class="orders">${ORDERS.map(o => { const dis = (o === 'disparar' || o === 'hostigar') && (d.range === 0 || (sel.ammo ?? 1) <= 0) || (o === 'perseguir' && !b.groups.some(q => q.side === 1 && q.status === 'huida')); return `<button class="${sel.order === o ? 'on' : ''}" data-b="order" data-o="${o}" ${dis ? 'disabled' : ''} title="${esc(ORDER_HELP[o])}">${ORDER_NAMES[o]}</button>`; }).join('')}</div>
     <h4>Intensidad</h4><div class="orders">${(Object.keys(INT) as Intensity[]).map(i => `<button class="${sel.intensity === i ? 'on' : ''}" data-b="int" data-i="${i}" ${i === 'desesperada' && !desp ? 'disabled' : ''} title="${esc(INT_HELP[i])}">${INT_NAMES[i]}</button>`).join('')}</div>
     <div class="btns"><button data-b="intall" data-i="${sel.intensity}">Aplicar esta intensidad a todos</button></div>` : '<p class="neg">Este grupo ya no puede recibir órdenes.</p>'}</div>`;
   } else if (sel) gi = `<div class="grp"><h4>Grupo enemigo</h4><p class="small">${groupLine(sel)}</p></div>`;
@@ -230,10 +234,10 @@ function finishIfDone() {
 }
 function runOne(marshal = false) {
   if (!V) return; const b = V.b; if (marshal) aiOrders(b, 0); aiOrders(b, 1);
-  const from = new Map(b.groups.map(q => [q.id, { x: q.x, y: q.y, men: q.men }])); runPhase(b, techAtkFor(V.g, b)); finishIfDone();
+  const from = new Map(b.groups.map(q => [q.id, { x: q.x, y: q.y, men: q.men }])); runPhase(b); finishIfDone();
   V.anim = { t0: performance.now(), from }; render(); requestAnimationFrame(draw);
 }
-function autoAll() { if (!V) return; const b = V.b; if (b.stage === 'reconocimiento' || b.stage === 'despliegue') { b.stage = 'combate'; } let guard = 0; while (b.stage !== 'fin' && guard++ < 30) { aiOrders(b, 0); aiOrders(b, 1); runPhase(b, techAtkFor(V.g, b)); } finishIfDone(); V.anim = null; render(); }
+function autoAll() { if (!V) return; const b = V.b; if (b.stage === 'reconocimiento' || b.stage === 'despliegue') { b.stage = 'combate'; } let guard = 0; while (b.stage !== 'fin' && guard++ < 30) { aiOrders(b, 0); aiOrders(b, 1); runPhase(b); } finishIfDone(); V.anim = null; render(); }
 function onClick(ev: Event) {
   if (!V) return; const el = (ev.target as HTMLElement).closest('[data-b]') as HTMLElement | null; if (!el || (el as HTMLButtonElement).disabled) return; const a = el.dataset.b; const b = V.b;
   const sel = V.sel != null ? b.groups.find(q => q.id === V!.sel) : null;

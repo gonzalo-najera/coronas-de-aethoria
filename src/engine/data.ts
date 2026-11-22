@@ -92,7 +92,7 @@ export const BUILDINGS: BuildingDef[] = [
 ];
 export const BLD: Record<string, BuildingDef> = Object.fromEntries(BUILDINGS.map(b => [b.id, b]));
 
-export interface TechDef { id: string; name: string; branch: string; cost: number; req: string[]; desc: string; effects: string[]; unlocks: { kind: string; name: string; ref?: string }[]; col: number; row: number; }
+export interface TechDef { id: string; name: string; branch: string; cost: number; req: string[]; desc: string; effects: string[]; unlocks: { kind: string; name: string; ref?: string }[]; col: number; row: number; era?: number; mil?: boolean; }
 export const TECHS: TechDef[] = [
   { id: 'escritura', name: 'Escritura', branch: 'Educación', cost: 0, req: [], desc: 'Registro de leyes y cuentas.', effects: ['Base de toda administración.'], unlocks: [], col: 0, row: 3 },
   { id: 'forja', name: 'Forja', branch: 'Metalurgia', cost: 0, req: [], desc: 'Trabajo básico del hierro.', effects: [], unlocks: [{ kind: 'Edificio', name: 'Herrería', ref: 'herreria' }], col: 0, row: 6 },
@@ -111,37 +111,35 @@ export const TECHS: TechDef[] = [
   { id: 'administracion', name: 'Administración', branch: 'Administración', cost: 110, req: ['escritura'], desc: 'Funcionarios y registros.', effects: ['+5 estabilidad en provincias lejanas', 'Reduce la penalización por expansión'], unlocks: [{ kind: 'Ley', name: 'Integración plena de especies', ref: 'integracion' }], col: 1, row: 5 },
   { id: 'mineria', name: 'Minería profunda', branch: 'Minería', cost: 100, req: ['forja'], desc: 'Galerías y entibados.', effects: ['+20% hierro'], unlocks: [{ kind: 'Edificio', name: 'Mina nivel 2-3', ref: 'mina' }], col: 1, row: 6 },
   { id: 'metalurgia', name: 'Metalurgia avanzada', branch: 'Metalurgia', cost: 140, req: ['forja', 'mineria'], desc: 'Hornos de alta temperatura.', effects: [], unlocks: [{ kind: 'Edificio', name: 'Armería', ref: 'armeria' }], col: 2, row: 6 },
-  { id: 'acero', name: 'Acero templado', branch: 'Metalurgia', cost: 220, req: ['metalurgia'], desc: 'Hojas más duras y flexibles.', effects: ['+12% ataque cuerpo a cuerpo de todas las unidades'], unlocks: [{ kind: 'Mejora militar', name: '+12% ataque' }], col: 3, row: 6 },
+  { id: 'acero', name: 'Acero templado', branch: 'Metalurgia', cost: 220, req: ['metalurgia'], desc: 'Hojas más duras y flexibles.', effects: ['Permite fabricar equipo de nivel Avanzado en provincias con armería (no mejora por sí solo a las tropas existentes)'], unlocks: [{ kind: 'Equipo', name: 'Nivel de equipo Avanzado' }], col: 3, row: 6, era: 2, mil: true },
   { id: 'mamposteria', name: 'Mampostería', branch: 'Arquitectura', cost: 80, req: [], desc: 'Muros de piedra trabada.', effects: ['+15% piedra'], unlocks: [{ kind: 'Edificio', name: 'Murallas nivel 2-3', ref: 'murallas' }], col: 1, row: 7 },
   { id: 'fortificaciones', name: 'Fortificaciones', branch: 'Fortificaciones', cost: 160, req: ['mamposteria'], desc: 'Castillos y torres flanqueantes.', effects: [], unlocks: [{ kind: 'Edificio', name: 'Castillo', ref: 'castillo' }], col: 2, row: 7 },
-  { id: 'asedio', name: 'Ingeniería de asedio', branch: 'Asedios', cost: 180, req: ['fortificaciones', 'matematicas'], desc: 'Arietes, torres y catapultas.', effects: ['Asedios un 40% más rápidos'], unlocks: [{ kind: 'Unidad', name: 'Gigantes de asedio', ref: 'gigantes' }], col: 3, row: 7 },
-  { id: 'picas', name: 'Picas', branch: 'Infantería', cost: 70, req: [], desc: 'Formaciones cerradas de astas largas.', effects: [], unlocks: [{ kind: 'Unidad', name: 'Piqueros', ref: 'piqueros' }], col: 1, row: 8 },
-  { id: 'montada', name: 'Tácticas montadas', branch: 'Caballería', cost: 100, req: ['picas'], desc: 'Cargas y hostigamiento a gran velocidad.', effects: [], unlocks: [{ kind: 'Unidad', name: 'Caballería centaura', ref: 'centauros' }], col: 2, row: 8 },
-  { id: 'arcolargo', name: 'Arco largo', branch: 'Arquería', cost: 100, req: ['silvicultura'], desc: 'Arcos de tejo de gran alcance.', effects: [], unlocks: [{ kind: 'Unidad', name: 'Arqueros élficos', ref: 'arq_elficos' }], col: 2, row: 9 },
+  { id: 'asedio', name: 'Ingeniería de asedio', branch: 'Asedios', cost: 180, req: ['fortificaciones', 'matematicas'], desc: 'Arietes, torres y catapultas.', effects: ['Asedios un 40% más rápidos'], unlocks: [], col: 3, row: 7, era: 2, mil: true },
+  { id: 'picas', name: 'Picas', branch: 'Infantería', cost: 70, req: [], desc: 'Formaciones cerradas de astas largas.', effects: [], unlocks: [], col: 1, row: 8, era: 2, mil: true },
+  { id: 'montada', name: 'Tácticas montadas', branch: 'Caballería', cost: 100, req: ['picas'], desc: 'Cargas y hostigamiento a gran velocidad.', effects: [], unlocks: [], col: 2, row: 8, mil: true },
+  { id: 'arcolargo', name: 'Arco largo', branch: 'Arquería', cost: 100, req: ['silvicultura'], desc: 'Arcos de tejo de gran alcance.', effects: [], unlocks: [], col: 2, row: 9, era: 2, mil: true },
   { id: 'logistica', name: 'Logística', branch: 'Logística', cost: 110, req: ['administracion'], desc: 'Convoyes y almacenes de campaña.', effects: ['+2 meses de autonomía para los ejércitos'], unlocks: [{ kind: 'Edificio', name: 'Depósito militar', ref: 'deposito' }], col: 2, row: 5 },
+  { id: 'equitacion', name: 'Equitación', branch: 'Caballería', cost: 60, req: [], desc: 'Cría y doma de caballos de guerra.', effects: [], unlocks: [], col: 1, row: 10, era: 1, mil: true },
+  { id: 'arco_compuesto', name: 'Arco compuesto', branch: 'Armas a distancia', cost: 120, req: ['equitacion'], desc: 'Arcos de cuerno y tendón que se tensan a galope.', effects: [], unlocks: [], col: 2, row: 10, era: 2, mil: true },
+  { id: 'estribo', name: 'Estribo y silla de guerra', branch: 'Caballería', cost: 140, req: ['equitacion', 'forja'], desc: 'El jinete se afirma y la lanza transmite todo el peso de la carga.', effects: [], unlocks: [], col: 3, row: 10, era: 2, mil: true },
+  { id: 'ballesta', name: 'Ballesta', branch: 'Armas a distancia', cost: 150, req: ['matematicas', 'forja'], desc: 'Arco mecánico de gran potencia y fácil manejo.', effects: [], unlocks: [], col: 3, row: 9, era: 2, mil: true },
+  { id: 'loriga', name: 'Lorigas y yelmos', branch: 'Armaduras y protección', cost: 130, req: ['metalurgia'], desc: 'Malla completa y yelmo cerrado para la infantería de línea.', effects: [], unlocks: [], col: 3, row: 8, era: 2, mil: true },
+  { id: 'armadura_placas', name: 'Armadura de placas', branch: 'Armaduras y protección', cost: 230, req: ['loriga', 'acero'], desc: 'Placas de acero articuladas.', effects: [], unlocks: [], col: 4, row: 8, era: 2, mil: true },
+  { id: 'forja_maestra', name: 'Maestría armera', branch: 'Armamento cuerpo a cuerpo', cost: 280, req: ['armadura_placas'], desc: 'Talleres de maestros armeros.', effects: ['Permite fabricar equipo De élite en provincias con armería'], unlocks: [{ kind: 'Equipo', name: 'Nivel de equipo De élite' }], col: 5, row: 8, era: 2, mil: true },
+  { id: 'trabuquete', name: 'Trabuquete de contrapeso', branch: 'Ingeniería militar', cost: 200, req: ['asedio'], desc: 'Máquinas de contrapeso que lanzan proyectiles enormes.', effects: [], unlocks: [], col: 4, row: 7, era: 2, mil: true },
+  { id: 'instruccion', name: 'Instrucción militar', branch: 'Organización y disciplina', cost: 90, req: ['escritura'], desc: 'Sargentos, ejercicios y reglamentos.', effects: ['Las tropas nuevas se instruyen un 25% más rápido', 'Los reclutas parten con +5% de experiencia'], unlocks: [{ kind: 'Mejora', name: 'Instrucción más rápida' }], col: 1, row: 11, era: 1, mil: true },
+  { id: 'cirujanos', name: 'Cirujanos de campaña', branch: 'Medicina militar', cost: 140, req: ['herboristeria'], desc: 'Barberos y cirujanos que acompañan al ejército.', effects: ['Un 10% de los muertos en batalla pasan a ser heridos recuperables'], unlocks: [{ kind: 'Mejora', name: 'Menos muertos en batalla' }], col: 3, row: 1, era: 2, mil: true },
 ];
 export const TECH: Record<string, TechDef> = Object.fromEntries(TECHS.map(t => [t.id, t]));
+// Desbloqueos militares generados desde el catálogo: así cada tecnología muestra qué unidades, armas y protecciones habilita.
+for (const sp of UNIT_SPECS) for (const tid of sp.techs || []) { const T = TECH[tid]; if (!T) continue; const others = (sp.techs || []).filter(x => x !== tid).map(x => TECH[x]?.name || x); T.unlocks.push({ kind: 'Unidad', name: sp.name + (others.length ? ' (con ' + others.join(', ') + ')' : ''), ref: sp.id }); }
+for (const wd of [...WEAPONS, ...ARMORS]) if (wd.tech && TECH[wd.tech]) TECH[wd.tech].unlocks.push({ kind: 'Equipo', name: wd.name });
+export function kingdomEra(techs: string[]) { let e = 1; for (const t of techs) e = Math.max(e, TECH[t]?.era || 1); return e; }
 
-export interface UnitDef {
-  id: string; name: string; species: SpeciesId | null; tech?: string; needsBarracks: boolean;
-  atk: number; def: number; ranged: number; range: number; speed: number; morale: number; charge: number;
-  antiCav: number; density: number; cost: { oro: number; armas: number }; upkeep: number; food: number;
-  stratSpeed: number; terrain: Partial<Record<string, number>>; desc: string; symbol: string; cav: boolean;
-}
-// Valores por 100 efectivos (coste, mantenimiento, comida). density = efectivos por casilla de frente.
-export const UNITS: UnitDef[] = [
-  { id: 'milicia', name: 'Milicia', species: null, needsBarracks: false, atk: 4, def: 4, ranged: 0, range: 0, speed: 1, morale: 40, charge: 0, antiCav: 1, density: 120, cost: { oro: 6, armas: 1 }, upkeep: 0.3, food: 0.12, stratSpeed: 1, terrain: {}, desc: 'Levas mal equipadas. Baratas, frágiles.', symbol: 'inf', cav: false },
-  { id: 'lanceros', name: 'Lanceros', species: null, needsBarracks: true, atk: 6, def: 7, ranged: 0, range: 0, speed: 1, morale: 55, charge: 0, antiCav: 1.5, density: 110, cost: { oro: 12, armas: 3 }, upkeep: 0.6, food: 0.14, stratSpeed: 1, terrain: {}, desc: 'Infantería de línea versátil.', symbol: 'inf', cav: false },
-  { id: 'piqueros', name: 'Piqueros', species: null, tech: 'picas', needsBarracks: true, atk: 5, def: 9, ranged: 0, range: 0, speed: 0.9, morale: 60, charge: 0, antiCav: 2.4, density: 120, cost: { oro: 14, armas: 3 }, upkeep: 0.7, food: 0.14, stratSpeed: 0.95, terrain: { bosque: 0.7 }, desc: 'Muro de picas: frena cargas.', symbol: 'pike', cav: false },
-  { id: 'arqueros', name: 'Arqueros', species: null, needsBarracks: true, atk: 3, def: 3, ranged: 6, range: 5, speed: 1, morale: 45, charge: 0, antiCav: 1, density: 100, cost: { oro: 12, armas: 2 }, upkeep: 0.6, food: 0.13, stratSpeed: 1, terrain: {}, desc: 'Tiro a distancia. Débiles cuerpo a cuerpo.', symbol: 'bow', cav: false },
-  { id: 'minotauros', name: 'Infantería pesada de minotauros', species: 'minotauro', needsBarracks: true, atk: 12, def: 10, ranged: 0, range: 0, speed: 0.85, morale: 75, charge: 0.8, antiCav: 1.3, density: 60, cost: { oro: 30, armas: 6 }, upkeep: 1.6, food: 0.3, stratSpeed: 0.85, terrain: { colinas: 1.1 }, desc: 'Choque devastador que rompe formaciones.', symbol: 'heavy', cav: false },
-  { id: 'centauros', name: 'Caballería centaura', species: 'centauro', tech: 'montada', needsBarracks: true, atk: 9, def: 5, ranged: 3, range: 3, speed: 2.2, morale: 65, charge: 1.2, antiCav: 1, density: 50, cost: { oro: 28, armas: 4 }, upkeep: 1.4, food: 0.28, stratSpeed: 1.6, terrain: { bosque: 0.6, montana: 0.5, llanura: 1.15, estepa: 1.2 }, desc: 'Cargas, flanqueos y hostigamiento.', symbol: 'cav', cav: true },
-  { id: 'exploradores', name: 'Exploradores faunos', species: 'fauno', needsBarracks: false, atk: 4, def: 3, ranged: 3, range: 3, speed: 1.6, morale: 50, charge: 0, antiCav: 1, density: 80, cost: { oro: 9, armas: 1 }, upkeep: 0.4, food: 0.1, stratSpeed: 1.3, terrain: { bosque: 1.5, selva: 1.4 }, desc: 'Reconocimiento y emboscadas. Mejoran la información de batalla.', symbol: 'scout', cav: false },
-  { id: 'enanos', name: 'Defensores enanos', species: 'enano', needsBarracks: true, atk: 7, def: 13, ranged: 0, range: 0, speed: 0.75, morale: 80, charge: 0, antiCav: 1.8, density: 110, cost: { oro: 22, armas: 5 }, upkeep: 1.1, food: 0.15, stratSpeed: 0.8, terrain: { colinas: 1.2, montana: 1.25 }, desc: 'Muralla viviente. Lentos.', symbol: 'shield', cav: false },
-  { id: 'arq_elficos', name: 'Arqueros élficos', species: 'elfo', tech: 'arcolargo', needsBarracks: true, atk: 4, def: 4, ranged: 10, range: 7, speed: 1.05, morale: 65, charge: 0, antiCav: 1, density: 90, cost: { oro: 26, armas: 3 }, upkeep: 1.3, food: 0.12, stratSpeed: 1.05, terrain: { bosque: 1.2 }, desc: 'Precisión y alcance excepcionales. Difíciles de reponer.', symbol: 'bow', cav: false },
-  { id: 'gigantes', name: 'Gigantes de asedio', species: 'gigante', tech: 'asedio', needsBarracks: true, atk: 70, def: 45, ranged: 0, range: 0, speed: 0.7, morale: 85, charge: 1, antiCav: 1.5, density: 4, cost: { oro: 220, armas: 30 }, upkeep: 9, food: 1.8, stratSpeed: 0.7, terrain: {}, desc: 'Pocos y temibles. Derriban murallas (asedios x2).', symbol: 'giant', cav: false },
-];
-export const UNIT: Record<string, UnitDef> = Object.fromEntries(UNITS.map(u => [u.id, u]));
+// Unidades: catálogo modular en milcat.ts (edades, armas, protecciones, atributos derivados).
+export { UNITS, UNIT } from './milcat';
+import { UNIT_SPECS, WEAPONS, ARMORS } from './milcat';
+export type { UnitDef } from './milcat';
 
 export const LAWS = {
   impuestos: { name: 'Impuestos', levels: ['Bajos', 'Moderados', 'Altos'], desc: ['−25% ingresos fiscales, +8 estabilidad, +crecimiento.', 'Equilibrio entre ingresos y estabilidad.', '+35% ingresos fiscales, −12 estabilidad, −crecimiento económico.'] },

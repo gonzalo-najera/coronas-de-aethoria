@@ -1,11 +1,12 @@
 // Creación de partida y utilidades comunes del estado.
 import { RNG, hashNums } from './rng';
 import type { GameState, Kingdom, ProvState, Character, SpeciesId, Relation, Army, ResId, Biome } from './types';
+import { ensureMilitary } from './equipment';
 import { KINGDOMS, SPECIES_IDS, SPECIES, MONTHS, SEASONS, UNIT, KingdomTemplate } from './data';
 import { generateWorld, World } from './world';
 import { personName, cityName } from './names';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 export const START_YEAR = 312;
 
 export function rngOf(g: GameState): RNG { const r = new RNG(0); r.s = g.rng; return r; }
@@ -84,7 +85,7 @@ export function newGame(opts: NewGameOpts): { w: World; g: GameState } {
   const g: GameState = {
     version: SAVE_VERSION, seed: opts.seed, worldHash: w.hash, rng: 0, turn: 0, startYear: START_YEAR, playerId: opts.player, difficulty: opts.difficulty, gameName: opts.gameName || 'Partida',
     kingdoms: [], provinces: [], armies: [], expeditions: [], relations: {}, chronicle: [], alerts: [], events: [], pendingBattles: [], battleReports: [], expReports: [],
-    nextId: 1, history: [], stats: { battlesWon: 0, battlesLost: 0, maxArmy: 0, founded: 0, discovered: 0, rulers: [] }, autoPause: true,
+    nextId: 1, history: [], stats: { battlesWon: 0, battlesLost: 0, maxArmy: 0, founded: 0, discovered: 0, rulers: [] }, autoPause: true, regiments: [],
   };
   const usedCity = new Set<string>();
   for (const s of w.provinces) {
@@ -147,7 +148,7 @@ export function newGame(opts: NewGameOpts): { w: World; g: GameState } {
   // Ejércitos iniciales
   for (const k of g.kingdoms) {
     const cap = g.provinces[k.capital]; const units: Army['units'] = [];
-    const add = (type: string, men: number) => { const u = UNIT[type]; if (u.species && (cap.species[u.species] || 0) < 0.03) return; if (u.tech && !k.techs.includes(u.tech)) return; units.push({ type, men, exp: 0.1 }); };
+    const add = (type: string, men: number) => { const u = UNIT[type]; if (u.species && (cap.species[u.species] || 0) < 0.03) return; if (!u.techs.every(t => k.techs.includes(t))) return; units.push({ type, men, exp: 0.1, tier: 2 }); };
     if (k.independent) { add('milicia', 900); if (cap.species.minotauro > 0.3) add('minotauros', 300); if (cap.species.centauro > 0.3) add('exploradores', 0); }
     else {
       add('milicia', 1600); add('lanceros', 1200); add('arqueros', 700);
@@ -183,6 +184,7 @@ export function newGame(opts: NewGameOpts): { w: World; g: GameState } {
   chron(g, pk.id, 'monarca', `${pk.ruler.name} (${SPECIES[pk.ruler.species].name.toLowerCase()}, ${pk.ruler.age} años) gobierna ${pk.name} desde ${g.provinces[pk.capital].cityName}.`, true);
   g.stats.rulers.push(pk.ruler.name);
   for (const k of g.kingdoms) k.research.current = null;
+  ensureMilitary(g, a => g.provinces[a.prov].cityName);
   return { w, g };
 }
 

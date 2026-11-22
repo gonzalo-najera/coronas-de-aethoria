@@ -1,5 +1,6 @@
 // Economy, Population y Construction Engines. Toda cifra mostrada en la interfaz sale de estas funciones.
 import type { GameState, ResId, Breakdown, SpeciesId, Kingdom, ProvState } from './types';
+import { UNITS } from './milcat';
 import { SPECIES, SPECIES_IDS, BLD, BuildingDef, UNIT, DEPOSITS, RES, TRADEABLE, TECH } from './data';
 import type { World } from './world';
 import { seasonFor, armyMen, rel, atWar, alert, chron, totalPop, dateOf } from './game';
@@ -303,7 +304,7 @@ export function processEconomy(w: World, g: GameState, kid: number, rnd: () => n
   if (k.research.current) {
     k.research.progress += Math.max(0, k.stock.investigacion); k.stock.investigacion = 0;
     const cost = techCost(k, k.research.current);
-    if (k.research.progress >= cost) { const t = k.research.current; k.techs.push(t); k.research.progress -= cost; k.research.current = null; if (kid === g.playerId) { alert(g, 'completado', `Investigación completada: ${techName(t)}.`); chron(g, kid, 'tecnologia', `Los eruditos del reino dominan: ${techName(t)}.`, true); } }
+    if (k.research.progress >= cost) { const t = k.research.current; k.techs.push(t); k.research.progress -= cost; k.research.current = null; if (kid === g.playerId) { alert(g, 'completado', `Investigación completada: ${techName(t)}.`); militaryNews(g, k, t); chron(g, kid, 'tecnologia', `Los eruditos del reino dominan: ${techName(t)}.`, true); } }
   } else k.stock.investigacion = Math.min(k.stock.investigacion, 500);
   // previsión de escasez
   if (kid === g.playerId) { const fNet = e.net.alimentos; if (fNet < 0 && k.stock.alimentos > 0) { const months = k.stock.alimentos / -fNet; if (months < 6) alert(g, months < 3 ? 'critica' : 'importante', `Alimentos: balance ${fNet.toFixed(1)}/mes. Autonomía estimada ${months.toFixed(1)} meses.`); } }
@@ -320,3 +321,11 @@ export function recruitPool(w: World, g: GameState, pid: number, species: Specie
   return Math.max(0, Math.floor(species === 'gigante' ? pool * 0.3 : pool));
 }
 export { dateOf };
+
+/** Al descubrir una técnica militar: qué unidades habilita y qué regimientos quedan obsoletos (sin mejorar a nadie automáticamente). */
+function militaryNews(g: GameState, k: Kingdom, t: string) {
+  const newU = UNITS.filter(u => u.techs.includes(t) && u.techs.every(x => k.techs.includes(x))).map(u => u.name);
+  const obs = new Set<string>(); for (const a of g.armies) if (a.owner === k.id) for (const u of a.units) if (UNIT[u.type].obsoleteBy.some(x => UNIT[x].techs.includes(t) && UNIT[x].techs.every(y => k.techs.includes(y)))) obs.add(UNIT[u.type].name);
+  if (newU.length) alert(g, 'consejo', `Nuevas unidades disponibles: ${newU.join(', ')}. Recuerda que necesitarás armas, un cuartel y meses de instrucción.`);
+  if (obs.size) alert(g, 'consejo', `Quedan obsoletas: ${[...obs].join(', ')}. Puedes modernizar esos regimientos desde el panel del ejército.`);
+}

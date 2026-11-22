@@ -56,7 +56,14 @@ export interface Kingdom {
   aiTimer: number; dynasty: string;
 }
 
-export interface Unit { type: string; men: number; exp: number; }
+// tier: nivel de equipo 0..4 (Obsoleto..De élite; ausente = Estándar). train: meses de instrucción pendientes.
+// amm: fracción de munición disponible (ausente = completa). rid: regimiento al que pertenece.
+export interface Unit { type: string; men: number; exp: number; tier?: number; train?: number; amm?: number; rid?: number; }
+export interface Regiment {
+  id: number; owner: number; name: string; banner: number; founded: number; type: string; active: boolean;
+  battles: number; wins: number; losses: number; casualties: number; decorations: string[]; commanders: string[];
+  history: { turn: number; text: string }[];
+}
 export interface Army {
   id: number; owner: number; name: string; prov: number; units: Unit[]; wounded: Record<string, number>;
   path: number[]; progress: number; supply: number; morale: number; general: Character | null;
@@ -86,4 +93,5 @@ export interface GameState {
   nextId: number; history: { turn: number; oro: number; alimentos: number; pop: number; investigacion: number }[];
   stats: { battlesWon: number; battlesLost: number; maxArmy: number; founded: number; discovered: number; rulers: string[] };
   autoPause: boolean;
+  regiments: Regiment[];
 }

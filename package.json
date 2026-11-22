@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "check": "tsc --noEmit",
-    "test": "./run.sh tests/sim.test.ts"
+    "test": "./run.sh tests/sim.test.ts",
+    "test:balance": "./run.sh tests/balance.test.ts"
   },
   "keywords": [],
   "author": "",
